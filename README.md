@@ -62,7 +62,7 @@
 
 ### 使用发行 ZIP（Windows）
 
-1. 下载并解压 `dsh-reasoning-slider-0.1.11.zip`。
+1. 下载并解压 `dsh-reasoning-slider-0.1.15.zip`。
 2. 在解压后的项目目录打开 PowerShell。
 3. 运行下方安装脚本，将目录参数替换为自己的 **DeepSeek Harness 安装目录**。
 
@@ -71,7 +71,7 @@
 .\scripts\install.ps1 -InstallDirectory 'C:\Apps\DeepSeek Harness'
 ```
 
-脚本使用 Harness 随附的 CLI，将 ZIP 内的 `dist/dsh-reasoning-slider-0.1.11.tgz` 安装到 `desktop` profile。**完成后重启 DeepSeek Harness**，点击输入框旁的模型名称即可打开面板。
+脚本使用 Harness 随附的 CLI，将 ZIP 内的 `dist/dsh-reasoning-slider-0.1.15.tgz` 安装到 `desktop` profile。**完成后重启 DeepSeek Harness**，点击输入框旁的模型名称即可打开面板。
 
 使用发行 ZIP 安装，无需另装 Node.js 或运行构建。若下载的是 GitHub 自动生成的源码 ZIP，先按[开发指南](docs/DEVELOPMENT.md)构建安装包。
 
@@ -83,7 +83,7 @@
 ```powershell
 $installDirectory = 'C:\Apps\DeepSeek Harness'
 $cli = Join-Path $installDirectory 'resources\runtime\cli\bin\dsh.cmd'
-$bundle = (Resolve-Path '.\dist\dsh-reasoning-slider-0.1.11.tgz').Path
+$bundle = (Resolve-Path '.\dist\dsh-reasoning-slider-0.1.15.tgz').Path
 & $cli plugin --profile desktop add $bundle
 ```
 
