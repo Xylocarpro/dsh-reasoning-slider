@@ -56,6 +56,20 @@ try {
   check(await page.locator('.drs-ultra-burst').count()===0,'one-shot burst removes itself after fading');
   check(await page.locator('.drs-particles').evaluate(el=>Number(getComputedStyle(el).opacity)<=.65),'whole particle layer caps alpha including overlaps');
   await page.locator('.drs-panel').screenshot({path:'test-results/ultra.png'});
+  check(await page.locator('.drs-aurora-canvas').evaluate(canvas=>{
+    const gl=canvas.getContext('webgl');
+    return (!gl && getComputedStyle(canvas.parentElement).backgroundImage.includes('gradient')) ||
+      (!!gl && canvas.width > 0 && canvas.height > 0 && gl.getError() === gl.NO_ERROR);
+  }),'Ultra CHROMA renderer initializes with a non-empty canvas or CSS fallback');
+  check(await page.locator('.drs-aurora-canvas').evaluate(async canvas=>{
+    const before=Number(canvas.dataset.drsTime||0);
+    await new Promise(resolve=>setTimeout(resolve,260));
+    return Number(canvas.dataset.drsTime||0)>before+0.08;
+  }),'Ultra CHROMA flow field advances between frames');
+  check(await page.locator('.drs-aurora').evaluate(el=>{
+    const animation = getComputedStyle(el,'::after').animationName;
+    return animation === 'drs-aurora-drift';
+  }),'Ultra fallback aurora layer keeps a continuous drift animation');
   const haloRect=await page.locator('.drs-panel').boundingBox(); await page.screenshot({path:'test-results/ultra-outer-glow.png',clip:{x:haloRect.x-25,y:haloRect.y-25,width:haloRect.width+50,height:haloRect.height+50}});
   const r=await page.locator('.drs-track').boundingBox();
   const before=await page.evaluate(()=>fixture.calls.length);
@@ -67,15 +81,26 @@ try {
   await page.waitForFunction(()=>getComputedStyle(document.querySelector('.drs-edge-glow')).opacity==='0');
   check(true,'leaving Ultra fades out the border glow');
   check(await page.evaluate(()=>fixture.calls.length)===before+1,'release commits one supported native effort');
-  // Drag continuously through both intervals, retaining the same particle field.
+  // Drag through discrete midpoint thresholds; the thumb must remain snapped.
   await page.locator('.drs-particles').evaluate(el=>window.particleCanvas=el);
   const at=value=>r.x+14+(r.width-28)*value/3;
   await page.mouse.move(at(1),r.y+14); await page.mouse.down();
   const samples=[];
-  for(const value of [1.5,2,2.25,2.75,3,2.5,1.5,1]) {
+  for(const value of [1.2,1.49,1.51,2.2,2.49,2.51,2.9,2.49,1.49,1]) {
     await page.mouse.move(at(value),r.y+14);
-    if(value===2.75) check(await page.locator('.drs-ultra-burst').count()===0,'burst waits until the thumb reaches the Ultra endpoint');
-    if(value===3) {
+    if(value===2.51) {
+      await page.waitForTimeout(80);
+      check(await page.locator('.drs-ultra-burst').count()===0,'Ultra burst waits for the thumb to finish snapping');
+    }
+    await page.waitForTimeout(320);
+    const snapped = value < 1.5 ? 1 : value < 2.5 ? 2 : 3;
+    check(await page.locator('.drs-thumb').evaluate((el, expected) => {
+      const track = el.parentElement.getBoundingClientRect(), thumb = el.getBoundingClientRect();
+      const center = thumb.left + thumb.width / 2 - track.left;
+      return Math.abs(center - (14 + (track.width - 28) * expected / 3)) < 2;
+    }, snapped), `thumb stays snapped at ${snapped}`);
+    if(value===2.49) check(await page.locator('.drs-ultra-burst').count()===0,'burst waits until the thumb reaches the Ultra endpoint');
+    if(value===2.51) {
       await page.locator('.drs-ultra-burst').waitFor();
       check(await page.locator('.drs-burst-flight i').evaluateAll(points=>points.length===13&&points.every(p=>{const s=getComputedStyle(p);return s.backgroundColor==='rgb(192, 92, 255)'&&s.borderRadius==='50%'&&s.cornerShape==='round'&&s.pointerEvents==='none'})),'Ultra burst uses circular purple noninteractive particles');
       await page.locator('.drs-ultra-burst').evaluate(el=>window.currentBurst=el);
@@ -91,7 +116,9 @@ try {
 
   check(await page.evaluate(()=>{fixture.watchCap=false;return fixture.capErrors.length>5&&fixture.capErrors.every(error=>error<1)}),'fill cap stays centered beneath the thumb during animated snapping and dragging');
   check(await page.evaluate(()=>fixture.trackFrames.every(f=>f.opacity==='1')&&fixture.trackFrames.some(f=>f.pending&&f.disabled==='true')),'track, fill and thumb keep full opacity through dragging and saving while pending input stays locked');
-  check(samples.every(s=>s.same)&&Math.abs(samples[0].alpha-.32)<.02&&samples[1].alpha===.64&&samples[1].gradient<.01&&samples[2].gradient<samples[3].gradient&&samples[4].gradient===1&&samples[7].alpha===0,'particles fade in both directions, High has no gradient, and High-to-Ultra gradient follows continuous position without remounting');
+  await page.waitForTimeout(900);
+  const finalParticleOpacity=await page.locator('.drs-particles').evaluate(el=>Number(getComputedStyle(el).opacity));
+  check(samples.every(s=>s.same)&&samples.some(s=>s.alpha===.64)&&samples[2].alpha===.64&&samples[2].gradient<.01&&samples[5].gradient===1&&samples[7].alpha===.64&&finalParticleOpacity===0,'particles remain tied to snapped tiers, stay painted during ordered fade-out, and preserve the continuous particle field');
   await page.evaluate(()=>{fixture.fail=true}); await page.locator('.drs-hit').focus(); await page.keyboard.press('End');
   await page.waitForFunction(()=>document.querySelector('.drs-error'));
   check(await page.locator('.drs-title').textContent()==='轻度','host rejection rolls back slider');
@@ -124,8 +151,12 @@ try {
   await page.waitForFunction(()=>fixture.state().current.reasoningEffort==='max');
   check(await page.locator('.drs-aurora').evaluate(el=>getComputedStyle(el).animationName==='none'),'reduced-motion preference disables animation');
   check(await page.locator('.drs-ultra-burst').count()===0,'reduced-motion preference suppresses the burst');
+  const particleMarker = `particle-${Date.now()}`;
+  await page.locator('.drs-particles').evaluate((el, marker) => { el.dataset.testIdentity = marker; }, particleMarker);
   await page.keyboard.press('Escape');
-  check(await page.locator('.drs-panel').count()===0,'Escape closes portal and unmounts particles');
+  check(await page.locator('.drs-panel').count()===1 && await page.locator('.drs-panel').getAttribute('aria-hidden')==='true','Escape hides panel without unmounting particles');
+  await page.locator('.drs-trigger').click();
+  check(await page.locator('.drs-particles').getAttribute('data-test-identity')===particleMarker,'reopening reuses the existing particle canvas');
   check(errors.length===0,'no browser JavaScript errors');
   await writeFile('test-results/browser.json',JSON.stringify({pass:true,results,errors},null,2));
   console.log(JSON.stringify({pass:true,results},null,2));

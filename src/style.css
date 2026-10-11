@@ -16,7 +16,9 @@
 .drs-spinner{width:12px;height:12px;border:1.5px solid #8885;border-top-color:currentColor;border-radius:50%;animation:drs-spin .7s linear infinite;flex:none}
 @keyframes drs-spin{to{transform:rotate(360deg)}}
 @property --drs-border-angle{syntax:"<angle>";inherits:true;initial-value:0deg}
-.drs-panel{--drs-edge:conic-gradient(from var(--drs-border-angle),#9932CC 0%,#DA70D6 25%,#9932CC 50%,#DA70D6 75%,#9932CC 100%);position:fixed;width:330px;max-width:calc(100vw - 24px);border:1px solid var(--dsw-alias-border-l4,#ffffff33);border-radius:15px;background:var(--dsw-alias-bg-layer-2,#29292b);color:var(--dsw-alias-label-primary,#f9fafb);box-shadow:0 18px 48px #00000038,0 4px 12px #00000018;z-index:1100;isolation:isolate;animation:drs-panel-in .18s ease-out}
+@property --drs-aurora-reveal{syntax:"<percentage>";inherits:false;initial-value:8%}
+.drs-panel{--drs-edge:conic-gradient(from var(--drs-border-angle),#9932CC 0%,#ffabf7 25%,#9932CC 50%,#ffabf7 75%,#9932CC 100%);position:fixed;width:330px;max-width:calc(100vw - 24px);border:1px solid var(--dsw-alias-border-l4,#ffffff33);border-radius:15px;background:var(--dsw-alias-bg-layer-2,#29292b);color:var(--dsw-alias-label-primary,#f9fafb);box-shadow:0 18px 48px #00000038,0 4px 12px #00000018;z-index:1100;isolation:isolate;animation:drs-panel-in .18s ease-out}
+.drs-panel[data-open=false]{visibility:hidden;pointer-events:none;opacity:0}
 .drs-content{max-height:calc(100dvh - 26px);overflow-y:auto;padding:12px 16px 10px;border-radius:inherit}
 .drs-panel{animation:drs-panel-in .18s ease-out,drs-border-flow 6s linear infinite}
 /* The opaque surface covers all inward blur; only the outside halo is visible. */
@@ -58,25 +60,30 @@
 .drs-track[data-disabled=true]{opacity:.55}
 .drs-inner{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none}
 /* The 14px end-cap center follows the thumb center, fully under its 16px radius. */
-.drs-fill{position:absolute;left:0;top:0;bottom:0;width:calc(28px + (100% - 28px)*var(--pos));border-radius:inherit;background:#339cff;transition:width .28s cubic-bezier(.2,.85,.2,1),opacity .2s}
+.drs-fill{position:absolute;left:0;top:0;bottom:0;width:calc(28px + (100% - 28px)*var(--pos));border-radius:inherit;background:#339cff;transition:width .17s cubic-bezier(.2,.85,.2,1),opacity .2s}
 .drs-panel[data-tier="0"]:not([data-dragging=true]) .drs-fill{opacity:0}
-.drs-aurora{position:absolute;inset:0;border-radius:inherit;opacity:0;background:radial-gradient(ellipse 62% 180% at 8% 50%,#339cff 0%,#339cffcc 28%,transparent 72%),radial-gradient(ellipse 68% 170% at 51% 42%,#7657c8 0%,#7657c8d9 30%,transparent 72%),radial-gradient(ellipse 62% 180% at 91% 58%,#654ea3 0%,#654ea3d9 32%,transparent 72%),linear-gradient(105deg,#339cff 0%,#7657c8 48%,#654ea3 100%);background-size:190% 100%;transition:opacity .3s}
-.drs-aurora{opacity:var(--drs-ultra-progress,0);animation:drs-aurora 12s ease-in-out infinite}
-@keyframes drs-aurora{0%,100%{background-position:0% 50%,100% 50%,0% 50%,0% 50%}50%{background-position:100% 50%,0% 50%,100% 50%,50% 50%}}
+.drs-aurora{position:absolute;inset:-1px;border-radius:inherit;opacity:0;--drs-aurora-reveal:8%;/* The mask controls the right-to-left reveal; the child canvas renders the CHROMA flow field. */mask-image:radial-gradient(ellipse 130% 320% at 100% 50%,#000 0%,#000 max(0%,calc(var(--drs-aurora-reveal) - 18%)),rgba(0,0,0,.78) var(--drs-aurora-reveal),transparent calc(var(--drs-aurora-reveal) + 24%));-webkit-mask-image:radial-gradient(ellipse 130% 320% at 100% 50%,#000 0%,#000 max(0%,calc(var(--drs-aurora-reveal) - 18%)),rgba(0,0,0,.78) var(--drs-aurora-reveal),transparent calc(var(--drs-aurora-reveal) + 24%));background:linear-gradient(108deg,#5c9ddd 0%,#6998df 38%,#7891d8 69%,#8e7dc6 100%);background-size:220% 100%;filter:blur(4px) saturate(.82);transition:opacity .3s}
+.drs-aurora::before{content:"";position:absolute;inset:-42% -24%;pointer-events:none;opacity:.22;background:radial-gradient(ellipse at 8% 52%,#2dc9ff 0%,transparent 30%),radial-gradient(ellipse at 47% 42%,#7751ff 0%,transparent 34%),radial-gradient(ellipse at 94% 56%,#ff62b1 0%,transparent 30%);background-size:170% 125%;background-position:0% 50%;filter:blur(7px) saturate(1.16);mix-blend-mode:screen;animation:drs-aurora-drift-back 4.167s ease-in-out infinite alternate}
+.drs-aurora::after{content:"";position:absolute;inset:-28% -12%;pointer-events:none;opacity:.30;background:radial-gradient(ellipse at 14% 48%,#62c9ff 0%,transparent 34%),radial-gradient(ellipse at 56% 54%,#b17cff 0%,transparent 38%),radial-gradient(ellipse at 91% 44%,#ff9bd7 0%,transparent 35%);background-size:145% 100%;background-position:0% 50%;filter:blur(5px) saturate(1.18);mix-blend-mode:screen;animation:drs-aurora-drift 3.125s ease-in-out infinite alternate}
+.drs-aurora-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.drs-panel[data-tier="3"] .drs-aurora{opacity:1;animation:drs-aurora-reveal 1.35s linear .17s 1 forwards}
+@keyframes drs-aurora-reveal{from{--drs-aurora-reveal:8%}to{--drs-aurora-reveal:100%}}
+@keyframes drs-aurora-drift{0%{transform:translate3d(-8%,1%,0) scale(1.04);background-position:0% 50%;opacity:.18}35%{opacity:.29}68%{opacity:.22}100%{transform:translate3d(8%,-1%,0) scale(1.04);background-position:100% 50%;opacity:.27}}
+@keyframes drs-aurora-drift-back{0%{transform:translate3d(9%,-1%,0) scale(1.08);background-position:100% 48%;opacity:.14}38%{opacity:.24}70%{opacity:.18}100%{transform:translate3d(-9%,2%,0) scale(1.08);background-position:0% 52%;opacity:.22}}
 .drs-ticks{position:absolute;inset:0 14px;pointer-events:none}
-.drs-ticks i{position:absolute;left:calc(var(--i)*100%/3);top:50%;width:4.5px;height:4.5px;border-radius:50%;transform:translate(-50%,-50%);background:#ffffff3d;transition:opacity .28s,transform .28s}
+.drs-ticks i{position:absolute;left:calc(var(--i)*100%/3);top:50%;width:4.5px;height:4.5px;border-radius:50%;transform:translate(-50%,-50%);background:#ffffff3d;transition:opacity .17s,transform .17s}
 .drs-ticks i[data-reached=true]{background:#ffffff80}
 .drs-ticks i[data-supported=false]{opacity:.2}
 .drs-panel[data-tier="3"] .drs-ticks i{opacity:0;transform:translate(-50%,-50%) scale(.55)}
-.drs-thumb{position:absolute;left:calc(14px + (100% - 28px)*var(--pos));top:50%;width:32px;height:32px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 1px 4px #00000025;transition:left .28s cubic-bezier(.2,.85,.2,1),scale .18s;pointer-events:none;z-index:2}
-.drs-panel[data-dragging=true] .drs-thumb{scale:1.055;transition:scale .18s}
-.drs-panel[data-dragging=true] .drs-fill{transition:opacity .2s}
+.drs-thumb{position:absolute;left:calc(14px + (100% - 28px)*var(--pos));top:50%;width:32px;height:32px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 1px 4px #00000025;transition:left .17s cubic-bezier(.2,.85,.2,1),scale .18s;pointer-events:none;z-index:2}
+.drs-panel[data-dragging=true] .drs-thumb{scale:1.055;transition:left .17s cubic-bezier(.2,.85,.2,1),scale .18s}
+.drs-panel[data-dragging=true] .drs-fill{transition:width .17s cubic-bezier(.2,.85,.2,1),opacity .2s}
 .drs-panel[data-dragging=true] .drs-particles,.drs-panel[data-dragging=true] .drs-aurora{transition:none}
 .drs-hit{cursor:grab;touch-action:none;user-select:none}
 .drs-hit[aria-disabled=true]{cursor:default}
 .drs-panel[data-dragging=true] .drs-hit{cursor:grabbing}
 /* Whole-layer opacity caps even overlapping particle pixels below 65%. */
-.drs-particles{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:var(--drs-particle-opacity,0);transition:opacity .28s ease}
+.drs-particles{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:var(--drs-particle-opacity,0);transition:opacity .17s ease}
 /* Outside the scroll container; the central hole keeps sparks behind the thumb. */
 .drs-ultra-burst{position:absolute;width:140px;height:140px;pointer-events:none;z-index:3;opacity:.64;mask-image:radial-gradient(circle at center,transparent 16px,#000 17px)}
 .drs-burst-flight{position:absolute;left:70px;top:70px;width:0;height:0;pointer-events:none;animation:drs-burst-flight var(--duration) cubic-bezier(.12,.65,.24,1) both}
@@ -97,4 +104,5 @@
 .drs-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 @media(max-width:600px){.drs-content{padding:12px 14px 10px}}
 @media(prefers-reduced-motion:reduce){.drs-panel,.drs-panel *,.drs-trigger *{animation:none!important;transition:none!important}}
+@media(prefers-reduced-motion:reduce){.drs-panel[data-tier="3"] .drs-aurora{opacity:1;--drs-aurora-reveal:100%;mask-image:none;-webkit-mask-image:none}}
 @media(prefers-reduced-motion:reduce){.drs-ultra-burst{display:none}}

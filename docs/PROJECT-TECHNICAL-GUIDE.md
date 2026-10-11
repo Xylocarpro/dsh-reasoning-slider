@@ -1,6 +1,6 @@
 # dsh-reasoning-slider 项目技术说明
 
-> 面向 DeepSeek Harness 的社区 UI 插件。本文以仓库当前 `0.1.22` 实现为准，说明插件如何被 Harness 加载、如何从模型目录读取能力、如何提交设置，以及视觉效果和开发工具链的实现方式。
+> 面向 DeepSeek Harness 的社区 UI 插件。本文以仓库当前 `0.1.40` 实现为准，说明插件如何被 Harness 加载、如何从模型目录读取能力、如何提交设置，以及视觉效果和开发工具链的实现方式。
 
 ## 1. 项目定位与兼容性
 
@@ -80,7 +80,7 @@ dsh-reasoning-slider/
 ```json
 {
   "name": "dsh-reasoning-slider",
-  "version": "0.1.22",
+  "version": "0.1.40",
   "main": "./lib/index.js",
   "exports": { ".": "./lib/index.js", "./client": "./lib/client.js" },
   "engines": { "node": ">=20", "dsh": ">=0.2.0-rc.2" }
@@ -236,9 +236,10 @@ export function apply(ctx) { /* 注册样式和插槽 */ }
 
 ```js
 speedScale = clamp((position - 1) / 2, 0, 1)
+effectiveSpeed = speedScale * flow * (1 + 0.3 * flow)
 ```
 
-因此轻度为 0，高为 0.5，Ultra 为 1。初始化时会在完整滑轨坐标中预置 40 颗粒子，高档约显示 12 颗，向 Ultra 拖动时逐步增加到约 25 颗。粒子数量使用连续透明度权重过渡，跨过数量阈值时会渐显或渐隐。闪电关闭时粒子只在几像素范围内做无固定方向的随机漂移；开启或关闭时，各层分别保存当前流速，并按远到近以 35ms 间隔启动 0.8 秒正弦 ease-in-out 缓动。该曲线在起点与终点斜率均为 0，避免达到目标速度时突然收尾。粒子离开左端后从滑轨末端重新进入，进度条只通过 `ctx.rect(0, 0, boundary, height)` 裁切可见范围，不缩放或搬动粒子。
+因此轻度为 0，高为 0.5，Ultra 为 1；闪电开启后最终倍率为 1.3。初始化时会在完整滑轨坐标中预置 40 颗粒子，高档约显示 12 颗，向 Ultra 拖动时逐步增加到约 25 颗。进入高或 Ultra 时，粒子按粒径从大到小渐入；粒子数量仍使用连续透明度权重过渡。闪电关闭时粒子只在几像素范围内做无固定方向的随机漂移；开启或关闭时，各层分别保存当前流速，并按远到近以 35ms 间隔启动 0.8 秒正弦 ease-in-out 缓动。该曲线在起点与终点斜率均为 0，避免达到目标速度时突然收尾。首次打开后面板、Canvas、粒子和极光节点持续挂载，关闭时只隐藏并禁用交互，重新打开复用原有位置、运行时间和动画时间线，不重新播种或重启渐变。滑块采用限位拖动，只有鼠标跨过相邻档位中点时才切换预览档位并以动画吸附，松开后提交最终档位；单档位吸附和进度条同步过渡时长为 170ms。Ultra 溅射立即检测滑块物理中心，中心到达最右端后的下一帧直接触发，不会在跨越“高/Ultra”中点时提前出现，也不会在到位后额外等待。粒子离开左端后从滑轨末端进入，进度条只通过 `ctx.rect(0, 0, boundary, height)` 裁切可见范围，不缩放或搬动粒子。
 
 ### 数量与深度
 
@@ -260,13 +261,13 @@ Canvas 按设备像素比重设尺寸，像素比最高取 2；页面隐藏、�
 | --- | --- |
 | `.drs-panel[data-tier="0"]` | 关闭档位隐藏填充（拖动时保留预览） |
 | `.drs-panel[data-tier="3"]` | Ultra 紫色标题光晕及刻度渐隐 |
-| `--drs-ultra-progress` | 高到 Ultra 的极光透明度 |
+| `--drs-ultra-progress` | 兼容保留变量；Ultra 极光现由右向左覆盖动画控制 |
 | `--drs-particle-opacity` | 轻度到 Ultra 的粒子层透明度 |
 | `[data-edge=true]` | 额度提示开始 200ms 后显示渐变边框和外发光 |
 | `[data-notice=true]` | 隐藏档位标题、模型名称并显示额度提示 |
 | `[data-dragging=true]` | 禁止过渡造成拖动闪烁，滑块轻微放大 |
 
-Ultra 边框使用 `conic-gradient(#9932CC → #DA70D6)`，通过 `@property --drs-border-angle` 和 `drs-border-flow` 循环旋转。`.drs-edge-glow` 位于卡片外侧并使用 blur；卡片的实色 `::after` 伪元素遮住内侧光晕。边框和外发光共享同一个角度变量，因此流光同步。
+Ultra 边框使用 `conic-gradient(#9932CC → #ffabf7)`，通过 `@property --drs-border-angle` 和 `drs-border-flow` 循环旋转。`.drs-edge-glow` 位于卡片外侧并使用 blur；卡片的实色 `::after` 伪元素遮住内侧光晕。边框和外发光共享同一个角度变量，因此流光同步。极光覆盖层由 `.drs-aurora` 的 1.35 秒 mask 动画控制右向左显现，内部 `ChromaAurora` WebGL 画布按 CHROMA 说明实现四层 fbm 噪声、坐标扭曲、smoothstep 混色、丝状高光和低频呼吸；窄轨道上额外叠加低透明度弥散光带，以保持可感知的连续流动。WebGL 不可用时保留 CSS 渐变后备。画布组件在面板关闭时继续挂载，重新打开不会重置流场时间。
 
 ## 10. 构建、测试与联调
 
@@ -341,8 +342,8 @@ node tests/host-browser.mjs
 
 脚本先执行 `npm pack`，再从显式文件清单创建：
 
-- `dist/dsh-reasoning-slider-0.1.22.tgz`：Harness 可安装包；
-- `releases/dsh-reasoning-slider-0.1.22.zip`：源码、`lib`、脚本、测试、文档、截图和 tgz；
+- `dist/dsh-reasoning-slider-0.1.40.tgz`：Harness 可安装包；
+- `releases/dsh-reasoning-slider-0.1.40.zip`：源码、`lib`、脚本、测试、文档、截图和 tgz；
 - 同名 `.zip.sha256`：小写 SHA-256 校验值。
 
 版本发布前应运行 `npm test` 和浏览器测试，确认 `package.json` 版本、tgz、ZIP 文件名一致，再将 ZIP、tgz 和校验文件上传到 GitHub Release。GitHub 自动生成的源码 ZIP 不含构建后的安装包，使用者需要按照开发指南自行构建。

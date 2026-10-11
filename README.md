@@ -6,7 +6,7 @@
 
 为 DeepSeek Harness 打造的四档推理滑块与模型选择器，带有连续粒子过渡、极光渐变与 Ultra 流光效果。
 
-![Version](https://img.shields.io/badge/version-0.1.22-9932CC?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.1.40-9932CC?style=flat-square)
 ![Harness](https://img.shields.io/badge/Harness-0.2.0--rc.2-3B82F6?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/license-MIT-DA70D6?style=flat-square)](LICENSE)
 
@@ -47,17 +47,17 @@
 
 - **四档推理强度**：关、轻度、高、Ultra；支持拖动、点击、自动吸附和键盘切换。
 - **真实模型切换**：读取 Harness 模型目录，可搜索模型名称，保留模型支持的推理档位。
-- **连续动画反馈**：轻度到高逐渐显现粒子并加速；高到 Ultra 继续加速，极光渐变同步增强。
+- **连续动画反馈**：轻度到高逐渐显现粒子并加速；高到 Ultra 按粒径从大到小渐入并继续加速，Ultra 使用 CHROMA 风格流场从进度条右端向左匀速覆盖。
 - **Ultra 专属效果**：紫色标题光晕、流光边框与同步外发光、单次圆粒子溅射，以及两秒额度提示。
 - **稳定交互**：松手只提交一次设置，保存期间不闪烁、不新增加载提示行；失败时恢复实际设置。
-- **闪电动画模式**：关闭时粒子在几像素范围内随机漂移；开启或关闭后，四层粒子按远到近、间隔 35ms 依次开始 0.8 秒正弦 ease-in-out 缓动。
+- **闪电动画模式**：关闭时粒子在几像素范围内随机漂移；开启后整体流速提升 30%，四层粒子按远到近、间隔 35ms 依次开始 0.8 秒正弦 ease-in-out 缓动。
 - **细节照顾**：预置 40 颗完整滑轨粒子，高档约显示 12 颗，向 Ultra 拖动时增加至约 25 颗；四层粒子保持近大远小、近慢远快，并响应系统“减少动态效果”。
 
 ## 安装
 
 ### 使用发行 ZIP（Windows）
 
-1. 下载并解压 `dsh-reasoning-slider-0.1.22.zip`。
+1. 下载并解压 `dsh-reasoning-slider-0.1.40.zip`。
 2. 在解压后的项目目录打开 PowerShell。
 3. 运行下方安装脚本，将目录参数替换为自己的 **DeepSeek Harness 安装目录**。
 
@@ -66,7 +66,7 @@
 .\scripts\install.ps1 -InstallDirectory 'C:\Apps\DeepSeek Harness'
 ```
 
-脚本使用 Harness 随附的 CLI，将 ZIP 内的 `dist/dsh-reasoning-slider-0.1.22.tgz` 安装到 `desktop` profile。**完成后重启 DeepSeek Harness**，点击输入框旁的模型名称即可打开面板。
+脚本使用 Harness 随附的 CLI，将 ZIP 内的 `dist/dsh-reasoning-slider-0.1.40.tgz` 安装到 `desktop` profile。**完成后重启 DeepSeek Harness**，点击输入框旁的模型名称即可打开面板。
 
 使用发行 ZIP 安装，无需另装 Node.js 或运行构建。若下载的是 GitHub 自动生成的源码 ZIP，先按[开发指南](docs/DEVELOPMENT.md)构建安装包。
 
@@ -78,7 +78,7 @@
 ```powershell
 $installDirectory = 'C:\Apps\DeepSeek Harness'
 $cli = Join-Path $installDirectory 'resources\runtime\cli\bin\dsh.cmd'
-$bundle = (Resolve-Path '.\dist\dsh-reasoning-slider-0.1.22.tgz').Path
+$bundle = (Resolve-Path '.\dist\dsh-reasoning-slider-0.1.40.tgz').Path
 & $cli plugin --profile desktop add $bundle
 ```
 
@@ -101,9 +101,9 @@ $bundle = (Resolve-Path '.\dist\dsh-reasoning-slider-0.1.22.tgz').Path
 
 - **轻度 ↔ 高**：粒子随位置渐显或渐隐，速度从零逐步增加到高档速度。
 - **高 ↔ Ultra**：粒子继续平滑加速或减速，渐变随位置增强或减弱；速度不会超过 Ultra。
-- **进入 Ultra**：先显示“更快消耗使用额度”，暂时隐藏档位标题和模型名称；提示开始 0.2 秒后边框渐显。提示约两秒后淡出，标题恢复；滑块到达最右端时播放一次紫色粒子溅射。
+- **进入 Ultra**：先显示“更快消耗使用额度”，暂时隐藏档位标题和模型名称；提示开始 0.2 秒后边框渐显。提示约两秒后淡出，标题恢复；滑块到达最右端时播放一次紫色粒子溅射，极光从进度条右端向左匀速覆盖。
 
-粒子在卡片打开时已分散于完整滑轨中，只在“高”和 Ultra 区间通过进度遮罩渐显。粒子从滑轨末端进入，拖动进度不会生成、缩放或搬动粒子。闪电关闭时粒子缓慢随机漂移；开启或关闭后，四层粒子按远到近、间隔 35ms 依次开始 0.8 秒正弦 ease-in-out 过渡，使起步与到达固定速度时都自然收缓。四层速度区间依次为 204–220、188–204、172–188、156–172 px/s，每颗粒子在所属层内独立取值，高档保持 Ultra 半速。闪电只控制视觉动画并在输入框模型名称左侧显示图标，不改变模型参数或计费设置。
+粒子在卡片打开时已分散于完整滑轨中，只在“高”和 Ultra 区间通过进度遮罩渐显；到达档位后按近大远小的粒径顺序从大到小渐入。粒子从滑轨末端进入，拖动进度不会生成、缩放或搬动粒子。闪电关闭时粒子缓慢随机漂移；开启后整体流速提升 30%，四层粒子按远到近、间隔 35ms 依次开始 0.8 秒正弦 ease-in-out 过渡，使起步与到达固定速度时都自然收缓。首次打开后面板、Canvas 和极光动画保持挂载，关闭时只隐藏和禁用交互，重新打开不会重新生成粒子、重置位置或重启渐变动画。滑块采用限位拖动：鼠标保持按住时滑块停留在当前档位，只有跨过相邻档位之间 50% 中点才自动吸附到下一档位。四层速度区间依次为 204–220、188–204、172–188、156–172 px/s，每颗粒子在所属层内独立取值，高档保持 Ultra 半速。闪电只控制视觉动画并在输入框模型名称左侧显示图标，不改变模型参数或计费设置。
 
 | 操作 | 键盘 |
 | :--- | :--- |

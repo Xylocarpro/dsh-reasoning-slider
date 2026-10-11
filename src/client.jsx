@@ -1,18 +1,135 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useId, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import css from './style.css';
-import { LEVELS, clamp, currentTier, findChoice, nearestTier, selectionForModel, supportedTiers } from './core.js';
+import { LEVELS, clamp, currentTier, findChoice, selectionForModel, supportedTiers } from './core.js';
 import { startParticles } from './particles.js';
 
 const Bolt = () => <svg viewBox="0 0 18 20" aria-hidden="true"><path d="M11.6 1.8 3.7 10.5h5.1l-1.1 7.7 7.8-9.2h-5.2z"/></svg>;
 const Chevron = () => <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>;
 
-function Particles({ position, powered }) {
+function Particles({ position, powered, persistence }) {
   const ref = useRef(null);
+  const previousPosition = useRef(position);
+  const hideTimer = useRef(null);
+  const [canvasVisible, setCanvasVisible] = useState(() => position > 1);
   const stateRef = useRef({ position, powered });
   stateRef.current = { position, powered };
-  useEffect(() => startParticles(ref.current, () => stateRef.current), []);
-  return <canvas className="drs-particles" ref={ref} aria-hidden="true"/>;
+  useEffect(() => {
+    clearTimeout(hideTimer.current);
+    const wasVisibleTier = previousPosition.current > 1;
+    if (position > 1) setCanvasVisible(true);
+    else if (wasVisibleTier) {
+      // Keep the canvas painted while the particle renderer performs its
+      // ordered far-to-near fade. The layer state reaches zero after .8s.
+      setCanvasVisible(true);
+       hideTimer.current = setTimeout(() => setCanvasVisible(false), 900);
+    } else setCanvasVisible(false);
+    previousPosition.current = position;
+    return () => clearTimeout(hideTimer.current);
+  }, [position]);
+  useEffect(() => startParticles(ref.current, () => stateRef.current, {
+    restore: persistence.current,
+    onSuspend: snapshot => { persistence.current = snapshot; },
+  }), [persistence]);
+  const canvasOpacity = position > 1 ? clamp(position - 1, 0, 1) * .64 : canvasVisible ? .64 : 0;
+  return <canvas className="drs-particles" ref={ref} aria-hidden="true"
+    style={{ '--drs-particle-opacity': canvasOpacity }}/>;
+}
+
+// CHROMA-style flow field: the canvas keeps its own clock so hiding and
+// reopening the panel does not restart the visual state.
+function ChromaAurora() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const gl = canvas.getContext('webgl', { alpha: true, antialias: false, premultipliedAlpha: false });
+    if (!gl) return;
+    const vertexSource = `attribute vec2 a_position; void main(){gl_Position=vec4(a_position,0.0,1.0);}`;
+      const fragmentSource = `
+      precision mediump float;
+      uniform vec2 u_resolution;
+      uniform float u_time;
+      // CHROMA's Aurora palette: the track should read as luminous colour,
+      // with the underlying blue fill only showing through the soft reveal.
+      const vec3 A=vec3(0.467,0.318,1.0);
+      const vec3 B=vec3(0.176,0.788,1.0);
+      const vec3 C=vec3(1.0,0.384,0.694);
+      float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+      float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash21(i),hash21(i+vec2(1.0,0.0)),f.x),mix(hash21(i+vec2(0.0,1.0)),hash21(i+vec2(1.0,1.0)),f.x),f.y);}
+      float fbm(vec2 p){float value=0.0,amp=0.5;mat2 rot=mat2(0.80,-0.60,0.60,0.80);for(int i=0;i<4;i++){value+=amp*noise(p);p=rot*p*2.02+vec2(13.7,9.2);amp*=0.5;}return value;}
+      void main(){
+        vec2 uv=gl_FragCoord.xy/u_resolution, p=(uv-.5)*vec2(u_resolution.x/max(1.0,u_resolution.y),1.0);
+        p.y*=1.65;
+        // The track is only a few pixels tall, so the field needs a little
+        // more temporal travel than the full-size CHROMA artwork to remain
+        // visibly alive at this scale.
+        // The reference CHROMA page uses several slowly travelling fields. The
+        // slider is much narrower, so the temporal travel and warp are lifted
+        // slightly to keep the same silky motion visible at 28px tall.
+        float t=u_time*2.15;
+        float n1=fbm(p*1.06+vec2(t*.23,-t*.15));
+        float n2=fbm(p*1.18+vec2(3.7-t*.17,6.1+t*.12));
+        vec2 q=p+(vec2(n1,n2)-.5)*vec2(1.62,1.24);
+        q+=vec2(sin(p.y*1.45+t*.13),cos(p.x*1.25-t*.11))*.18;
+        float f1=fbm(q*1.17+vec2(t*.095,-t*.076));
+        float f2=fbm(q*1.83+vec2(-t*.11,t*.085));
+        float f3=noise(q*2.52+vec2(t*.065,2.0-t*.05));
+        float field=f1*.55+f2*.31+f3*.14;
+        float chroma=smoothstep(.16,.84,f1*.66+f2*.34);
+        vec3 color=mix(B,A,chroma);
+        float rose=smoothstep(.28,.76,f2*.62+f3*.38+.08*sin(q.y*2.0+t*.055));
+        color=mix(color,C,rose*.78);
+        // Keep a broad, bright body while reserving a little variation for
+        // the narrow silk-like highlights described by CHROMA.
+        float breath=.92+.08*sin(t*.31-.8);
+        float centerGlow=exp(-pow((uv.y-.52)*1.42,2.0));
+        float structure=.78+smoothstep(.18,.82,field)*.30;
+        float highlight=pow(max(0.0,field-.40),2.0)*1.55;
+        float threads=pow(max(0.0,.5+.5*sin(q.x*1.55+q.y*.76+f1*3.2+sin(q.y*1.65-t*.13)*.9)),11.0);
+        float swell=.5+.5*sin(t*.24+f1*2.0-f2);
+        vec3 result=color*(structure+highlight*.32)*breath*(.98+centerGlow*.12);
+        result+=color*swell*.055+vec3(1.0)*threads*.13;
+        // A slightly translucent output lets the blue track remain a soft
+        // base at the feathered reveal edge instead of creating a dark slab.
+        gl_FragColor=vec4(clamp(result,0.0,1.0),.88);
+      }`;
+    const compile = (type, source) => {
+      const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { canvas.dataset.drsShaderError = gl.getShaderInfoLog(shader) || 'compile'; gl.deleteShader(shader); return null; }
+      return shader;
+    };
+    const vertex = compile(gl.VERTEX_SHADER, vertexSource), fragment = compile(gl.FRAGMENT_SHADER, fragmentSource);
+    if (!vertex || !fragment) return;
+    const program = gl.createProgram(); gl.attachShader(program, vertex); gl.attachShader(program, fragment); gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { canvas.dataset.drsShaderError = gl.getProgramInfoLog(program) || 'link'; return; }
+    canvas.dataset.drsReady = 'true';
+    const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+    const position = gl.getAttribLocation(program, 'a_position');
+    const resolution = gl.getUniformLocation(program, 'u_resolution'), time = gl.getUniformLocation(program, 'u_time');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+    let frame = 0, last = performance.now(), elapsed = 0;
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect(), scale = Math.min(devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.round(rect.width * scale)), height = Math.max(1, Math.round(rect.height * scale));
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; gl.viewport(0, 0, width, height); }
+    };
+    const draw = now => {
+      resize();
+      const delta = Math.min((now - last) / 1000, .05); last = now;
+      // Keep the CHROMA field continuous while running it at 1.5x playback
+      // speed so the narrow track reads as visibly alive.
+      if (!reduce.matches) elapsed += delta * 1.728;
+      gl.useProgram(program); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.enableVertexAttribArray(position); gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform2f(resolution, canvas.width, canvas.height); gl.uniform1f(time, elapsed); gl.drawArrays(gl.TRIANGLES, 0, 6);
+      canvas.dataset.drsTime = elapsed.toFixed(3);
+      frame = requestAnimationFrame(draw);
+    };
+    const observer = new ResizeObserver(resize); observer.observe(canvas); frame = requestAnimationFrame(draw);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); gl.deleteProgram(program); gl.deleteBuffer(buffer); gl.deleteShader(vertex); gl.deleteShader(fragment); };
+  }, []);
+  return <canvas className="drs-aurora-canvas" ref={ref} aria-hidden="true"/>;
 }
 
 function UltraBurst({ x, y }) {
@@ -31,7 +148,7 @@ export function ReasoningSlider({ locked, available, directory, load, select }) 
   const state = useSyncExternalStore(directory.subscribe, directory.getSnapshot);
   const choice = findChoice(state), supported = supportedTiers(choice?.model);
   const actualTier = currentTier(state, choice?.model);
-  const [open, setOpen] = useState(false), [modelsOpen, setModelsOpen] = useState(false);
+  const [open, setOpen] = useState(false), [panelMounted, setPanelMounted] = useState(false), [modelsOpen, setModelsOpen] = useState(false);
   const [preview, setPreview] = useState(null), [position, setPosition] = useState(null);
   const [visual, setVisual] = useState(null), [error, setError] = useState('');
   const [notice, setNotice] = useState(false), [leaving, setLeaving] = useState(false);
@@ -40,6 +157,7 @@ export function ReasoningSlider({ locked, available, directory, load, select }) 
   const wasAtUltra = useRef(false), burstTimer = useRef(null), burstId = useRef(0);
   const [shimmer, setShimmer] = useState(false), [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
+  const particlePersistence = useRef(null);
   const [powered, setPowered] = useState(() => {
     try { return localStorage.getItem('dsh-reasoning-slider.lightning') === 'on'; } catch { return false; }
   });
@@ -73,8 +191,21 @@ export function ReasoningSlider({ locked, available, directory, load, select }) 
         y: t.y + t.height / 2 - p.y - panel.current.clientTop });
       burstTimer.current = setTimeout(() => setBurst(null), 900);
     };
-    // Dragged thumbs are already at the endpoint. Keyboard/click changes snap first.
-    if (drag.current) launch(); else burstTimer.current = setTimeout(launch, 280);
+    const waitForEndpoint = () => {
+      const thumb = track.current?.querySelector('.drs-thumb');
+      const trackBox = track.current?.getBoundingClientRect();
+      const thumbBox = thumb?.getBoundingClientRect();
+      if (trackBox && thumbBox) {
+        const expected = trackBox.right - 14;
+        const actual = thumbBox.left + thumbBox.width / 2;
+        if (Math.abs(actual - expected) <= 2) { launch(); return; }
+      }
+      burstTimer.current = setTimeout(waitForEndpoint, 16);
+    };
+    // A discrete drag can preview Ultra before the thumb finishes its snap.
+    // The snap itself takes 170ms. Start checking when that movement can have
+    // completed, then launch on the first endpoint frame without another wait.
+    burstTimer.current = setTimeout(waitForEndpoint, 170);
   }, [atUltra, open, tier]);
   useEffect(() => () => clearTimeout(burstTimer.current), []);
 
@@ -158,10 +289,25 @@ export function ReasoningSlider({ locked, available, directory, load, select }) 
     if (!d) return;
     const r = track.current.getBoundingClientRect();
     const raw = clamp((clientX - r.left - 14 - d.offset) / Math.max(1, r.width - 28) * 3, 0, 3);
-    d.next = nearestTier(raw, supported);
-    const distance = Math.abs(raw - d.next);
-    setVisual(distance < .13 ? d.next + (raw - d.next) * Math.pow(distance / .13, 1.3) : raw);
-    setPreview(d.next);
+    let target = d.next;
+    let index = supported.indexOf(target);
+    if (index < 0) return;
+    // The thumb stays on its current supported tier until the pointer crosses
+    // the midpoint to an adjacent tier. Multiple crossed midpoints are applied
+    // in one event so a fast drag still lands on the intended discrete tier.
+    while (raw > target && index < supported.length - 1) {
+      const next = supported[index + 1];
+      if (raw < (target + next) / 2) break;
+      target = next; index += 1;
+    }
+    while (raw < target && index > 0) {
+      const previous = supported[index - 1];
+      if (raw > (previous + target) / 2) break;
+      target = previous; index -= 1;
+    }
+    d.next = target;
+    setVisual(target);
+    setPreview(target);
   }
   function pointerDown(ev) {
     if (!canSlide || !ev.isPrimary || ev.button !== 0 || drag.current) return;
@@ -207,12 +353,12 @@ export function ReasoningSlider({ locked, available, directory, load, select }) 
   return <>
     <button type="button" className="drs-trigger" ref={trigger} disabled={locked || !available} data-tier={actualTier}
       aria-label={`模型 ${modelName}，推理强度 ${LEVELS[actualTier]?.name ?? '默认'}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
-      onClick={() => { if (open) close(); else { setOpen(true); load(); } }}>
+      onClick={() => { if (open) close(); else { setPanelMounted(true); setOpen(true); load(); } }}>
       {powered && <span className="drs-pill-bolt"><Bolt/></span>}
       <span className="drs-model-label">{modelName}</span><span className="drs-pill-tier">{LEVELS[actualTier]?.name ?? state.retainedEffort ?? ''}</span>
       <span className={busy || state.status === 'loading' ? 'drs-spinner' : 'drs-chevron'}>{!busy && state.status !== 'loading' && <Chevron/>}</span>
     </button>
-    {open && createPortal(<section id={id} ref={panel} role="dialog" aria-label="模型与推理强度" className="drs-panel" data-tier={tier}
+    {panelMounted && createPortal(<section id={id} ref={panel} role="dialog" aria-label="模型与推理强度" aria-hidden={!open} inert={!open ? '' : undefined} className="drs-panel" data-open={open} data-tier={tier}
       data-powered={powered} data-dragging={visual !== null} data-notice={notice || leaving} data-edge={edgeVisible && tier === 3}
       style={{ ...(position ?? { visibility: 'hidden', left: 0, top: 0 }), '--drs-particle-opacity': particleVisibility * .64, '--drs-ultra-progress': ultraProgress }} onKeyDown={panelKey}>
       <span className="drs-edge-ring" aria-hidden="true"/>
@@ -233,7 +379,7 @@ export function ReasoningSlider({ locked, available, directory, load, select }) 
         aria-disabled={!canSlide} onKeyDown={sliderKey} onPointerDown={pointerDown}
         onPointerMove={ev => { if (drag.current?.pointer === ev.pointerId) dragTo(ev.clientX); }}
         onPointerUp={ev => finishDrag(ev)} onPointerCancel={ev => finishDrag(ev, true)} onLostPointerCapture={ev => finishDrag(ev, true)}>
-        <div className="drs-inner"><div className="drs-fill"><div className="drs-aurora"/></div><Particles position={sliderValue} powered={powered}/>
+        <div className="drs-inner"><div className="drs-fill"><div className="drs-aurora"><ChromaAurora/></div></div><Particles position={sliderValue} powered={powered} persistence={particlePersistence}/>
           <div className="drs-ticks">{LEVELS.map((level, i) => <i key={level.id} style={{ '--i': i }} data-supported={supported.includes(i)} data-reached={i <= tier}/>)}</div>
         </div>
         <div className="drs-thumb"/>

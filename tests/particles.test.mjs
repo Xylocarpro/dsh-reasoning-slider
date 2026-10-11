@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { flowForLayer, startParticles } from '../src/particles.js';
+import { flowForLayer, revealLayerDelay, revealLayerOpacity, revealLayerProgress, revealOrder, speedMultiplierForFlow, startParticles } from '../src/particles.js';
+import { makeParticle } from '../src/core.js';
 
 function harness() {
   const originals = new Map();
@@ -55,17 +56,121 @@ test('a pre-seeded full-track pool is revealed only by the progress mask', () =>
 });
 
 test('new particles fade in continuously as slider progress reveals a larger population', () => {
-  const h = harness(), state = { position: 2.3, powered: false };
+  const h = harness(), state = { position: 1, powered: false };
   const originalRandom = Math.random; Math.random = h.random;
   try {
     const stop = startParticles(h.canvas, () => state); h.step(0);
-    h.step(16);
+    state.position = 2.3;
+    for (let i = 0; i < 13; i++) h.step(16);
     const alphas = h.stops()
       .filter(stop => stop.offset === 0)
       .map(stop => Number(stop.color.match(/,([\d.]+)\)$/)?.[1] || 0));
-    assert.ok(alphas.some(alpha => alpha > 0 && alpha < .1),
+    assert.ok(alphas.some(alpha => alpha > 0 && alpha < 1),
       `a newly revealed particle starts partially transparent: ${alphas.join(',')}`);
     stop();
+  } finally { Math.random = originalRandom; h.restore(); }
+});
+
+test('particle reveal order is largest to smallest and powered flow adds 30 percent', () => {
+  const points = [
+    makeParticle(300, 28, 0, () => .5),
+    makeParticle(300, 28, 1, () => .5),
+    makeParticle(300, 28, .33, () => .5),
+  ];
+  const ordered = revealOrder(points);
+  assert.ok(ordered.every((point, index) => index === 0 || point.radius <= ordered[index - 1].radius));
+  assert.equal(speedMultiplierForFlow(0), 1);
+  assert.equal(speedMultiplierForFlow(1), 1.3);
+});
+
+test('particle reveal layers use 0.5s fades with 0.1s near/far staggering', () => {
+  assert.equal(revealLayerDelay(3, 'in'), 0);
+  assert.equal(revealLayerDelay(2, 'in'), .1);
+  assert.ok(Math.abs(revealLayerDelay(0, 'in') - .3) < 1e-12);
+  assert.equal(revealLayerDelay(0, 'out'), 0);
+  assert.equal(revealLayerDelay(1, 'out'), .1);
+  assert.ok(Math.abs(revealLayerDelay(3, 'out') - .3) < 1e-12);
+  assert.ok(revealLayerProgress(.25, 3, 'in') > 0);
+  assert.equal(revealLayerProgress(.05, 2, 'in'), 0);
+  assert.equal(revealLayerProgress(.55, 3, 'in'), 1);
+  assert.ok(revealLayerProgress(.25, 0, 'out', 1, 0) < 1);
+  assert.equal(revealLayerProgress(.05, 1, 'out', 1, 0), 1);
+});
+
+test('particle layers fade as a continuous layer instead of flashing individual dots', () => {
+  const atStart = revealLayerOpacity(0, 3, 'in', 0, 4);
+  const mid = revealLayerOpacity(.25, 3, 'in', 0, 4);
+  const atEnd = revealLayerOpacity(.5, 3, 'in', 0, 4);
+  assert.equal(atStart, 0);
+  assert.ok(mid > 0 && mid < 1);
+  assert.equal(atEnd, 1);
+  assert.equal(revealLayerOpacity(.05, 1, 'in', 0, 4), 0);
+  assert.equal(revealLayerOpacity(0, 0, 'out', 4, 0), 1);
+  assert.ok(revealLayerOpacity(.35, 0, 'out', 4, 0) < 1);
+});
+
+test('particle layers remain rendered while returning to Light and fade out in order', () => {
+  const h = harness(), state = { position: 3, powered: false };
+  const originalRandom = Math.random; Math.random = h.random;
+  try {
+    const stop = startParticles(h.canvas, () => state); h.step(0);
+    state.position = 1;
+    h.step(16);
+    const duringFade = h.arcs().length;
+    assert.ok(duringFade > 0, 'particles remain on the canvas during the fade-out');
+    for (let i = 0; i < 60; i++) h.step(16);
+    const finalAlphas = h.stops().filter(stop => stop.offset === 0)
+      .map(stop => Number(stop.color.match(/,([\d.]+)\)$/)?.[1] || 0));
+    assert.ok(finalAlphas.length > 0 && finalAlphas.every(alpha => alpha === 0),
+      'all particles finish fading out');
+    stop();
+  } finally { Math.random = originalRandom; h.restore(); }
+});
+
+test('reopening with lightning already enabled starts in motion without a new ramp', () => {
+  const h = harness(), state = { position: 2, powered: true };
+  const originalRandom = Math.random; Math.random = h.random;
+  try {
+    const stop = startParticles(h.canvas, () => state); h.step(0);
+    const before = h.arcs()[0].x;
+    h.step(16);
+    h.step(16);
+    const afterFirst = h.arcs()[0].x;
+    const firstMove = before - afterFirst;
+    h.step(16);
+    const secondMove = afterFirst - h.arcs()[0].x;
+    assert.ok(firstMove > .8, `powered reopen starts moving immediately: ${firstMove}`);
+    assert.ok(Math.abs(firstMove - secondMove) < .001, `no restart ramp: ${firstMove}/${secondMove}`);
+    stop();
+  } finally { Math.random = originalRandom; h.restore(); }
+});
+
+test('reopening with lightning disabled remains still', () => {
+  const h = harness(), state = { position: 2, powered: false };
+  const originalRandom = Math.random; Math.random = h.random;
+  try {
+    const stop = startParticles(h.canvas, () => state); h.step(0);
+    const before = h.arcs()[0].x;
+    h.step(16);
+    assert.ok(Math.abs(before - h.arcs()[0].x) < 2.5, 'disabled reopen does not flow');
+    stop();
+  } finally { Math.random = originalRandom; h.restore(); }
+});
+
+test('closing and reopening restores particle positions instead of reseeding the field', () => {
+  const h = harness(), state = { position: 2, powered: true };
+  const originalRandom = Math.random; Math.random = h.random;
+  let snapshot;
+  try {
+    const stop = startParticles(h.canvas, () => state, { onSuspend: value => { snapshot = value; } });
+    h.step(0); h.step(16); h.step(16);
+    const beforeClose = h.arcs().map(point => point.x);
+    stop();
+    const resumedStop = startParticles(h.canvas, () => state, { restore: snapshot });
+    h.step(0);
+    assert.deepEqual(h.arcs().map(point => point.x), beforeClose,
+      'reopening keeps the existing particle coordinates');
+    resumedStop();
   } finally { Math.random = originalRandom; h.restore(); }
 });
 

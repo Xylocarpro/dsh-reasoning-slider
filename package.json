@@ -1,6 +1,6 @@
 {
   "name": "dsh-reasoning-slider",
-  "version": "0.1.22",
+  "version": "0.1.40",
   "description": "四档推理强度滑块与模型选择器 · DeepSeek Harness UI 插件",
   "type": "module",
   "license": "MIT",
